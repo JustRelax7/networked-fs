@@ -90,6 +90,33 @@ void add_to_directory(uint32_t dir_inode_id, const char* name, uint32_t target_i
     save_inode(dir_inode_id, dir_node);
 }
 
+// Renames a file in the directory to preserve it as an older version
+void rename_in_directory(uint32_t dir_inode_id, const char* old_name, const char* new_name) {
+    Inode dir_node;
+    load_inode(dir_inode_id, dir_node);
+    
+    if (dir_node.size == 0 || dir_node.direct_ptrs[0] == 0) return;
+
+    char buffer[BLOCK_SIZE];
+    disk->read_block(dir_node.direct_ptrs[0], buffer);
+    
+    int entries = dir_node.size / sizeof(DirectoryEntry);
+    DirectoryEntry* dir_array = reinterpret_cast<DirectoryEntry*>(buffer);
+    
+    for (int i = 0; i < entries; i++) {
+        if (strcmp(dir_array[i].name, old_name) == 0) {
+            // Found old file; Rename it
+            memset(dir_array[i].name, 0, MAX_FILENAME); // Clear old name
+            strncpy(dir_array[i].name, new_name, MAX_FILENAME);
+            
+            // Persist the directory change to disk
+            disk->write_block(dir_node.direct_ptrs[0], buffer);
+            std::cout << "[C++ Engine] Preserved old version as: " << new_name << "\n";
+            return;
+        }
+    }
+}
+
 
 // --- EXTERN C INTERFACE (The Bridge for GoLang) ---
 extern "C" {
@@ -113,14 +140,71 @@ extern "C" {
         return 0; 
     }
 
+    // delete a file, free inode and data bitmap
+    void delete_file(const char* path) {
+        int target_inode_id = resolve_path(path);
+        if (target_inode_id == -1) return; // File doesn't exist
+
+        Inode target;
+        load_inode(target_inode_id, target);
+
+        // 1. Free the physical data blocks
+        int blocks_used = (target.size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        for (int i = 0; i < blocks_used && i < 12; i++) {
+            if (target.direct_ptrs[i] != 0) {
+                data_bm->free_bit(target.direct_ptrs[i]);
+            }
+        }
+
+        // 2. Free the Inode
+        inode_bm->free_bit(target_inode_id);
+
+        // 3. Unlink from Directory
+        Inode root_dir;
+        load_inode(sb.root_inode_id, root_dir);
+        
+        if (root_dir.direct_ptrs[0] != 0) {
+            char buffer[BLOCK_SIZE];
+            disk->read_block(root_dir.direct_ptrs[0], buffer);
+            
+            int entries = root_dir.size / sizeof(DirectoryEntry);
+            DirectoryEntry* dir_array = reinterpret_cast<DirectoryEntry*>(buffer);
+            
+            for (int i = 0; i < entries; i++) {
+                if (strcmp(dir_array[i].name, path) == 0) {
+                    // Mark as deleted by clearing the name. 
+                    // (In a production OS, we would compact the array to save space)
+                    memset(dir_array[i].name, 0, MAX_FILENAME);
+                    dir_array[i].inode_id = 0;
+                    disk->write_block(root_dir.direct_ptrs[0], buffer);
+                    break;
+                }
+            }
+        }
+        std::cout << "[C++ Engine] Deleted old version and freed memory: " << path << "\n";
+    }
+
+
+
     // Creates a file and writes data to it
     // Fulfills: Indexing structures, Direct Pointer Allocation
     int fs_write(const char* path, const char* data, int size) {
         int existing_inode = resolve_path(path);
+        // VERSIONING LOGIC ---
         if (existing_inode != -1) {
-            std::cerr << "[C++ Engine] File already exists. Versioning not yet triggered.\n";
-            return -1; 
+            std::string versioned_name = std::string(path) + ".v_old";
+            
+            // Case 3: If .v_old ALREADY exists, delete it
+            if (resolve_path(versioned_name.c_str()) != -1) {
+                delete_file(versioned_name.c_str());
+            }
+
+            // Case 2: Rename the current file to .v_old
+            std::cout << "[C++ Engine] CoW Versioning triggered for '" << path << "'\n";
+            rename_in_directory(sb.root_inode_id, path, versioned_name.c_str());
         }
+        // Case 1: (Handled automatically) Proceed to allocate new Inode below...
+        // ------------------------------------
 
         // 1. Allocate Inode
         int new_inode_id = inode_bm->allocate_bit();
