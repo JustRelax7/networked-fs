@@ -1,0 +1,154 @@
+Metadata.h:
+1. Why use padding[3]?
+-> to align to 4 bytes, due to is_dir (1 byte)
+
+2. why use pragma pack()?
+-> to get deterministic structure size (we want no compiler default padding}
+
+
+block_device
+3. BlockDevice (class) -> object represents the entire disk 
+
+4. why block_device.h (contains prototype) and block_device.cpp (contains declaration) separate?
+-> avoid multiple definition error when multiple files (mkfs.cpp, engine.cpp) call block_device.h
+
+5. What is SEEK_SET used in fseek?
+-> tells that start from the starting of the file for the offset
+
+
+in bitmap_manager
+6. allocate() -> was initially brute forcing to find the free bit; added last_searched_block with wrap around to reduce searching time
+BUFFER -> represents one block; read and write into it; 
+
+mkfs.cpp
+7. we create a block_buffer -> represent a block; do operation in it
+Wrtie that block_buffer into the disk to suitable address on the disk
+
+8. initially we were leaving the metadata blocks left as unused, than may have led to 
+the overwriting of the metadata blocks and corrupt the file system.
+
+9. we marked all the metadata block to one in the first data_bitmap block
+
+
+engine.cpp
+the actual abstraction that is going to run throughoobject ut the tenure of operation
+
+10. load_inode(inode id, inode obect) (inode object would be filled by function) 
+->first checks the bounds of inode id, like this :
+	number_of_inode_blocks = data_blocks_start - inode_table_start
+	inodes_per_block       = BLOCK_SIZE / sizeof(Inode)
+	max_inodes = number_of_inode_blocks × inodes_per_block
+  load_inode and save_inode : what they do ? -> go to the inode and read / write respectively
+
+->resolve_path :
+on getting a path as input (for now "file.txt"), check root dir -> if empty or no allocated pointers
+read the block pointed by the 0th direct pointer; get entries number;
+reinterpret the block as array of entries of the directory (entry = (name (received in i/p), inode number)); 
+search for the name in array -> found -> return
+
+-> add_to_directory: i/p = inode id of dir, name of the file and target inode id
+create local inode object (dir_node) and load the inode of the directory into it;
+if ; the directory has no file then this file the first file for it -> use bitmap manager to allocate
+else ; calculate no of entries -> at "entries" index insert the (name string, targe_inode_id)
+
+
+--------
+in Extern "C" :  (Go cannot understand complex c++ classes, so we take simple C string "char*")
+fs_init() -> 
+	-We already have virtual disk as a file
+	-here "disk"-> pointer to that file
+	-load superblock and check credentials
+	-allocate inode and data bitmap
+	
+	
+	
+		
+-> fs_write():                                    
+	-we get the path (in this case "file.txt"), if the file already exists -> exits;
+	-allocate new inode(first get inode number) (if got -1; then we are out of inodes -> MLE)
+	-create inode object and initialize the credentials (id, size, is_dir = 0)
+	-go block by block (max 12 blocks), use bitmap manager to allocate a new block
+		-create a temp buffer and put data in it and write the buffer to the disk
+->fs_read(): resolves path, fetched scettered data from blocks, reassembles into continuous byte stream and returns it
+	-resolve the path and get the target inode (if -1 -> Go says error 404)
+	-keep record of bytes_read (at offset byte_read from the result_buffer we copy the data upto length of chunk_size
+	-return result buffer
+
+
+
+in fs_write():
+	-versioning implemented
+	-may lead to overpopulation of the same version of the file 
+	-would suggest improvements for deleting the older version (when adding a file and found that older version exists -> delete old version, curr version -> old version; new file -> curr version)
+
+
+
+	solve the versioning problem (only returns the first version);
+	implement versioning
+	implement and explore higher hierarchies.
+	No delete function for files
+	make use of indirect pointer also
+	only one level of versioning; if older version exits delete it.
+	
+	implement a record for keeping the record of all the available files in file system.
+
+
+
+adding a delete_file() function:
+
+->delete_file(): free data, free inode, unlink directory
+	-target_inode_id (used to delete inode from bitmap) ; target (inode object) (used to delete data)
+	-for freeing data : calculate blocks used -> those direct pointers pointing to some block are freed
+	-inode freed
+	-in root directory, delete the entry of deleted file (do all things in buffer; then write the buffer to that block on disk)
+	
+
+fs_write(): creating a file and writing data to it. (CoW: Copy on write)  [char* data: data to write ]
+	-3 cases:
+		-completely new file -> allocate memory
+		-one version exists; -> mark it old and add new file
+		-old version and curr version exists -> delete old version; mark curr as old and write new file
+	-add new inode (from inode bitmap -> get new inode id) 
+	-new_file inode object : initialize it
+	-go block by block
+		-allocate new_block from data bitmap
+		-copy data into buffer (see the chunk_size; bytes_written stuff used for copying the data into the buffer)
+		-write the buffer into the new_block [new_block contains the blockID of 4KB block ]
+		-save the "new_file" inode object to new_inode_id
+		-add_to_directory the entry for the new file created (add (path, new_inode_id) to the directory entry)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+networked-fs/                  # Root project directory
+│
+├── cpp_engine/                # Phase 1: The C++ Storage Engine
+│   ├── block_device.h         # Disk abstraction header
+│   ├── block_device.cpp       # Raw block read/write implementation
+│   ├── metadata.h             # Disk layout, Superblock, and Inode structs
+│   ├── mkfs.cpp               # Standalone utility to format the virtual disk
+│   ├── bitmap_manager.h       # (Next step) Header for free space allocation
+│   ├── bitmap_manager.cpp     # (Next step) Logic to flip bits for blocks/inodes
+│   ├── engine.cpp             # The core FS logic and the C-Bridge for Go
+│   ├── Makefile               # Script to compile the C++ code and Shared Library
+│   └── virtual_disk.bin       # The 1GB generated disk (DO NOT push to GitHub)
+│
+└── go_network/                # Phase 2: The Go Network & Concurrency Layer
+    ├── go.mod                 # Go module definition
+    ├── server/                
+    │   └── main.go            # TCP Server, Thread Pool, File Locks, and CGO bridge
+    ├── client/                
+    │   └── main.go            # CLI tool for users to run commands (upload, read)
+    └── protocol/
+        └── types.go           # Standardized JSON/RPC struct definitions
