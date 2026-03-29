@@ -258,8 +258,8 @@ extern "C" {
         *out_size = target.size;
         char* result_buffer = (char*)malloc(target.size); // G0 responsible for freeing this
         
-        int bytes_read = 0;
-        int block_idx = 0;
+        uint32_t bytes_read = 0;
+        uint32_t block_idx = 0;
 
         while (bytes_read < target.size && block_idx < 12) {
             char block_buffer[BLOCK_SIZE];
