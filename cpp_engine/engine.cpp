@@ -140,10 +140,46 @@ extern "C" {
         return 0; 
     }
 
+    // Lists all files in the root directory
+    // Returns a heap-allocated, newline-separated C-string. Go must free it.
+    char* fs_list() {
+        Inode root_dir;
+        load_inode(sb.root_inode_id, root_dir);
+
+        // If the directory has never been allocated or is empty, return empty string
+        if (root_dir.size == 0 || root_dir.direct_ptrs[0] == 0) {
+            char* empty_result = (char*)malloc(1);
+            empty_result[0] = '\0';
+            return empty_result;
+        }
+
+        char buffer[BLOCK_SIZE];
+        disk->read_block(root_dir.direct_ptrs[0], buffer);
+
+        int entries = root_dir.size / sizeof(DirectoryEntry);
+        DirectoryEntry* dir_array = reinterpret_cast<DirectoryEntry*>(buffer);
+
+        std::stringstream ss;
+        
+        // Loop through all slots in the directory data block
+        for (int i = 0; i < entries; i++) {
+            // Ensure the slot isn't empty (skipped over a deleted file)
+            if (dir_array[i].name[0] != '\0') {
+                ss << dir_array[i].name << "\n";
+            }
+        }
+
+        // Convert the C++ string stream into a heap-allocated C-string for Go
+        std::string result_str = ss.str();
+        char* c_result = (char*)malloc(result_str.length() + 1);
+        strcpy(c_result, result_str.c_str());
+
+        return c_result;
+    }
     // delete a file, free inode and data bitmap
-    void delete_file(const char* path) {
+    int delete_file(const char* path) {
         int target_inode_id = resolve_path(path);
-        if (target_inode_id == -1) return; // File doesn't exist
+        if (target_inode_id == -1) return  -1; // File doesn't exist
 
         Inode target;
         load_inode(target_inode_id, target);
@@ -182,6 +218,7 @@ extern "C" {
             }
         }
         std::cout << "[C++ Engine] Deleted old version and freed memory: " << path << "\n";
+        return 0;
     }
 
 

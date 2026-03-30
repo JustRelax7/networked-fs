@@ -1,0 +1,1 @@
+export LD_LIBRARY_PATH=../build -> this should be run in terminal (be included in make file later on)

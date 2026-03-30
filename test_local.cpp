@@ -9,6 +9,7 @@ extern "C" {
     char* fs_read(const char* path, int* out_size);
     void delete_file(const char* path);
     void fs_unmount();
+    char* fs_list();
 }
 
 int main() {
@@ -33,6 +34,8 @@ int main() {
         free(read_buffer); // Free the malloc from fs_read!
     }
 
+    char* list=fs_list();
+    std::cout<<list;
     // 4. Test Versioning (Overwrite the file)
     std::cout << "\n--- Simulating User Updating the File ---\n";
     const char* data_v2 = "This is VERSION 2. The old text should be saved.";
