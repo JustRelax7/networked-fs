@@ -25,7 +25,7 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
-
+    "github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -152,7 +152,7 @@ func getFileHandler(c *gin.Context) {
             return
     }
     // 3. WAIT for the result (This is efficient in Go)
-    // Use a select to add a timeout so the user isn't stuck forever
+    // Use a select to add a timeout so the user isn't stuck forevfer
     select {
     case result := <-myResultChan:
         if result.err == true {
@@ -283,8 +283,19 @@ func deleteworker(jobs <- chan deleteJob){
             return
         }   
         cfile := C.CString(fileName)
+        fileLocksMutex.Lock()
+        if fileLocks[fileName] == nil{
+            fileLocks[fileName] = &sync.RWMutex{}
+        }
+        mu := fileLocks[fileName]
+        fileLocksMutex.Unlock()
+        mu.Lock()
         val := C.delete_file(cfile)
         C.free(unsafe.Pointer(cfile))
+        mu.Unlock()
+        fileLocksMutex.Lock()
+        delete(fileLocks,fileName)
+        fileLocksMutex.Unlock()
         fileListMutex.Lock()
         fileList = slices.Delete(fileList,ind,ind+1)
         fileListMutex.Unlock()
@@ -322,11 +333,7 @@ func main() {
 
     //Initialise Disk
     val := InitDisk()
-
-    // Ensure it unmounts cleanly when the server closes
-	defer C.fs_unmount()
-
-	// Catch Ctrl+C so the defer actually runs before the program dies
+	// Catch Ctrl+C so the server and disk can close gracefully.
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
     go func() {
@@ -364,14 +371,31 @@ func main() {
     }
 
     router := gin.Default()
+
+    //CORS middleware
+    router.Use(cors.New(cors.Config{
+        AllowOrigins:     []string{"*"}, // In production, replace * with your React app's IP
+        AllowMethods:     []string{"GET", "POST", "DELETE", "OPTIONS"},
+        AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+        ExposeHeaders:    []string{"Content-Disposition"}, // Crucial for downloading files!
+        AllowCredentials: true,
+        MaxAge:           12 * time.Hour,
+    })) 
+
     //  Limit multipart forms to 8MB
     router.MaxMultipartMemory = 8 << 20
     router.GET("/",func(c *gin.Context) {
         c.JSON(http.StatusOK,fileList)
     })
-    router.GET("/:filename", getFileHandler)
-	router.POST("/files/", fileUploadHandler)
-    router.DELETE("/:filename",deleteFileHandler)
-    log.Println("Server running on localhost:8080")
+    router.GET("/api/files", func(c *gin.Context) {
+        c.JSON(http.StatusOK, fileList)
+    })
+    router.GET("/api/files/:filename", getFileHandler)
+    router.POST("/api/upload", fileUploadHandler)
+    router.DELETE("/api/files/:filename", deleteFileHandler)
+
+    log.Println("Server running on 172.20.59.39:8080")
+    
+    // 3. NO HTTP:// HERE
     log.Fatal(router.Run("10.196.25.145:8080"))
 }

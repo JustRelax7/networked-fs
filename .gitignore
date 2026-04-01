@@ -3,3 +3,16 @@ virtual_disk.bin
 *.so
 *.exe
 *.bin
+hehe.txt
+.gitignore
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
