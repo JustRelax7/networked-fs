@@ -329,8 +329,6 @@ func deleteFileHandler(c *gin.Context){
 }
 
 func main() {
-	// router.GET("/albums/:id", getAlbumbyID)
-
     //Initialise Disk
     val := InitDisk()
 	// Catch Ctrl+C so the server and disk can close gracefully.
@@ -374,7 +372,7 @@ func main() {
 
     //CORS middleware
     router.Use(cors.New(cors.Config{
-        AllowOrigins:     []string{"*"}, // In production, replace * with your React app's IP
+        AllowOrigins:     []string{"*"}, // In production, replace * with React app's IP
         AllowMethods:     []string{"GET", "POST", "DELETE", "OPTIONS"},
         AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
         ExposeHeaders:    []string{"Content-Disposition"}, // Crucial for downloading files!
@@ -397,5 +395,5 @@ func main() {
     log.Println("Server running on 172.20.59.39:8080")
     
     // 3. NO HTTP:// HERE
-    log.Fatal(router.Run("10.196.25.145:8080"))
+    log.Fatal(router.Run("172.20.28.251:8080"))
 }

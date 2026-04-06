@@ -31,7 +31,7 @@ export default function App() {
 
   // Derived state: Filter out .v_old files and reverse for chronological order
   const displayFiles = allFiles
-    .filter(f => !f.endsWith('.v_old'))
+    .filter(f => !f.endsWith('.v_old') && (f!="items and specifications.pdf\b"))
     .reverse();
 
   // --- HANDLERS ---
@@ -212,7 +212,7 @@ export default function App() {
 
           {/* Guide */}
           <section className="max-w-4xl mx-auto px-4 py-20">
-            <h2 className="text-3xl font-bold text-center mb-8">How to Use</h2>
+            <h2 className="text-3xl font-bold text-center mb-8">How to Use Dashboard</h2>
             <div className="prose prose-blue mx-auto text-gray-600">
               <ul className="space-y-4">
                 <li><strong>Uploading:</strong> Click the "Upload File" button in the dashboard. The system allocates Inodes and physical blocks on the virtual disk automatically.</li>
@@ -273,7 +273,7 @@ export default function App() {
             ) : (
               <ul className="divide-y divide-gray-100">
                 {displayFiles.map((filename, idx) => {
-                  if (filename.endsWith('.v_old') || filename === '') return null; // Skip .v_old and .v_new files in main list
+                  if (filename === '') return null; // Skip .v_old and .v_new files in main list
                   const hasOld = allFiles.includes(`${filename}.v_old`);
                   return (
                     <li key={idx} className="p-4 sm:px-6 hover:bg-blue-50/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4">
